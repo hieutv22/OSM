@@ -20,7 +20,6 @@ public interface GetDataService {
 
     @GET("/routing/route")
     Call<Routing> getDirections(
-            @Query(value = "point") List<String> point1,
-            @Query(value = "point") List<String> point2
+            @Query(value = "point") List<String> points
     );
 }

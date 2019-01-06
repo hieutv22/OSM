@@ -1,5 +1,6 @@
 package com.example.vanhieu.demoopenstreetmap;
 
+import android.graphics.Color;
 import android.os.AsyncTask;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
@@ -17,6 +18,9 @@ import org.osmdroid.tileprovider.tilesource.TileSourceFactory;
 import org.osmdroid.util.GeoPoint;
 import org.osmdroid.views.MapController;
 import org.osmdroid.views.MapView;
+import org.osmdroid.views.overlay.Marker;
+import org.osmdroid.views.overlay.Polygon;
+import org.osmdroid.views.overlay.Polyline;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -26,11 +30,14 @@ public class MainActivity extends AppCompatActivity {
     private Button btnSearch;
     private EditText edtStart, edtEnd;
     private MapController controller;
+    private ArrayList<GeoPoint> listPoint = new ArrayList<>();
 
     private Point pointStart, pointEnd;
+    private Polyline line;
+    private Marker startMarker;
+    private Marker endMarker;
     private GetDataService service = RetrofitInstance.getRetrofitInstance().create(GetDataService.class);
 
-    private PointAsyncTask asyncTask;
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -46,7 +53,7 @@ public class MainActivity extends AppCompatActivity {
         osm.setMultiTouchControls(true);
 
         controller = (MapController) osm.getController();
-        controller.setZoom(12);
+        controller.setZoom(13);
 
         GeoPoint center = new GeoPoint(21.0369,105.7902);
         controller.animateTo(center);
@@ -71,23 +78,29 @@ public class MainActivity extends AppCompatActivity {
                                     List<SearchPlace> searchPlace = response.body();
                                     if(searchPlace.size()>0){
                                         pointStart = new Point(searchPlace.get(0).getLat(), searchPlace.get(0).getLon());
-//                                        getLatLog(searchPlace1.get(0));
-//                                        getLatLog(searchPlace.get(0));
 
-                                        List<String> point1 = new ArrayList<>();
-                                        List<String> point2 = new ArrayList<>();
-                                        point1.add(pointStart.getLat());
-                                        point1.add(pointStart.getLng());
-                                        point2.add(pointEnd.getLat());
-                                        point2.add(pointEnd.getLng());
+                                        List<String> points = new ArrayList<>();
+                                        points.add(pointStart.getLat()+","+pointStart.getLng());
+                                        points.add(pointEnd.getLat()+","+pointEnd.getLng());
 
-                                        Call<Routing> routingCall = service.getDirections(point1, point2);
+                                        Call<Routing> routingCall = service.getDirections(points);
                                         routingCall.enqueue(new Callback<Routing>() {
                                             @Override
                                             public void onResponse(Call<Routing> call, Response<Routing> response) {
                                                 Routing routing = response.body();
                                                 if(routing!=null){
                                                     Log.d("MainActivity", "onClick,....." + routing.getPaths().get(0).getDistance());
+                                                    GeoPoint startPoint =
+                                                            new GeoPoint(Double.parseDouble(pointStart.getLat()),
+                                                                    Double.parseDouble(pointStart.getLng()));
+
+                                                    GeoPoint endPoint =
+                                                            new GeoPoint(Double.parseDouble(pointEnd.getLat()),
+                                                                    Double.parseDouble(pointEnd.getLng()));
+                                                    listPoint.add(startPoint);
+                                                    decodePolyline(routing.getPaths().get(0).getPoints());
+                                                    listPoint.add(endPoint);
+                                                    directions(listPoint);
                                                 }else{
                                                     Toast.makeText(MainActivity.this, "Not found data", Toast.LENGTH_LONG).show();
                                                 }
@@ -126,37 +139,107 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
-    private void getLatLog(SearchPlace searchPlace){
-        Toast.makeText(MainActivity.this,"onClick " +searchPlace.getLat()  + " " + searchPlace.getLon() , Toast.LENGTH_LONG).show();
+    private void decodePolyline(String encoded){
+
+        int index = 0;
+        int len = encoded.length();
+        int lat = 0, lng = 0, ele = 0;
+        while (index < len)
+        {
+            // latitude
+            int b, shift = 0, result = 0;
+            do
+            {
+                b = encoded.charAt(index++) - 63;
+                result |= (b & 0x1f) << shift;
+                shift += 5;
+            } while (b >= 0x20);
+            int deltaLatitude = ((result & 1) != 0 ? ~(result >> 1) : (result >> 1));
+            lat += deltaLatitude;
+
+            // longitute
+            shift = 0;
+            result = 0;
+            do
+            {
+                b = encoded.charAt(index++) - 63;
+                result |= (b & 0x1f) << shift;
+                shift += 5;
+            } while (b >= 0x20);
+            int deltaLongitude = ((result & 1) != 0 ? ~(result >> 1) : (result >> 1));
+            lng += deltaLongitude;
+
+//            if (is3D)
+//            {
+//                // elevation
+//                shift = 0;
+//                result = 0;
+//                do
+//                {
+//                    b = encoded.charAt(index++) - 63;
+//                    result |= (b & 0x1f) << shift;
+//                    shift += 5;
+//                } while (b >= 0x20);
+//                int deltaElevation = ((result & 1) != 0 ? ~(result >> 1) : (result >> 1));
+//                ele += deltaElevation;
+//                poly.add((double) lat / 1e5, (double) lng / 1e5, (double) ele / 100);
+//            } else
+//                poly.add((double) lat / 1e5, (double) lng / 1e5);
+            GeoPoint gp = new GeoPoint((double) lat / 1e5, (double) lng / 1e5);
+            listPoint.add(gp);
+        }
     }
 
-    class PointAsyncTask extends AsyncTask<String, Point, Point>{
-
-        @Override
-        protected Point doInBackground(String... strings) {
-
-//              Call<SearchPlace> callEnd = service.getPlace(strings[1], "json", 1, 1);
-//            callEnd.enqueue(new Callback<SearchPlace>() {
-//                @Override
-//                public void onResponse(Call<SearchPlace> call, Response<SearchPlace> response) {
-//                    SearchPlace searchPlace = response.body();
-//                    publishProgress(new Point(Double.valueOf(searchPlace.getLat()), Double.valueOf(searchPlace.getLon())));
-//                }
+    private void directions(ArrayList<GeoPoint> points){
+//        //List<GeoPoint> geoPoints = new ArrayList<>();
+////add your points here
+//        Polygon polygon = new Polygon();    //see note below
+//        polygon.setFillColor(Color.argb(75, 255,0,0));
+//        points.add(points.get(0));    //forces the loop to close
+//        polygon.setPoints(points);
+//        polygon.setTitle("A sample polygon");
 //
-//                @Override
-//                public void onFailure(Call<SearchPlace> call, Throwable t) {
+////polygons supports holes too, points should be in a counter-clockwise order
+//        List<List<GeoPoint>> holes = new ArrayList<>();
+//        holes.add(points);
+//        polygon.setHoles(holes);
 //
-//                }
-//            });
-            return null;
+//        osm.getOverlayManager().add(polygon);
+
+        GeoPoint startPoint = new GeoPoint(points.get(0));
+        int size = points.size();
+        GeoPoint endPoint = new GeoPoint(points.get(size-1));
+//add your points here
+        if(line== null){
+            line = new Polyline();   //see note below!
+            line.setPoints(points);
+            line.setOnClickListener(new Polyline.OnClickListener() {
+                @Override
+                public boolean onClick(Polyline polyline, MapView mapView, GeoPoint eventPos) {
+                    Toast.makeText(mapView.getContext(), "polyline with " + polyline.getPoints().size() + "pts was tapped", Toast.LENGTH_LONG).show();
+                    return false;
+                }
+            });
+            line.setColor(Color.argb(75, 255,0,0));
+            line.setWidth(6);
+        }else {
+            line.setPoints(points);
         }
 
-        @Override
-        protected void onProgressUpdate(Point... values) {
-            pointStart = values[0];
-            //pointEnd = values[1];
-            //Log.d("MainActivity", "onClick " + pointEnd.getLat() + " " + pointEnd.getLng());
-            Log.d("MainActivity", "onClick " + pointStart.getLat() + " " + pointStart.getLng());
-        }
+        if(startMarker==null) startMarker = new Marker(osm);
+
+        startMarker.setPosition(startPoint);
+        startMarker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM);
+
+        if (endMarker==null) endMarker = new Marker(osm);
+        endMarker.setPosition(endPoint);
+        endMarker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM);
+
+        osm.getOverlayManager().add(line);
+        osm.getOverlays().add(startMarker);
+        osm.getOverlays().add(endMarker);
+
+        controller.setZoom(15);
+        controller.animateTo(points.get(0));
     }
 }

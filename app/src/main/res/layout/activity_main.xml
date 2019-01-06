@@ -13,10 +13,12 @@
         android:layout_height="wrap_content">
         <EditText
             android:id="@+id/edt_start"
+            android:text="Học viện Tài Chính"
             android:layout_width="match_parent"
             android:layout_height="wrap_content" />
         <EditText
             android:id="@+id/edt_end"
+            android:text="Đại học Bách Khoa Hà Nội"
             android:layout_width="match_parent"
             android:layout_height="wrap_content" />
         <Button
